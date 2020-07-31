@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Insert title here</title>
+</head>
+
+<body>
+	<div class="flexChild" id="camera-container">
+		<div class="camera-box">
+			<video id="received_video" autoplay></video>
+			<video id="local_video" autoplay muted></video>
+			<button id="hangup-button" onclick="hangUpCall();" disabled>Hang Up</button>
+		</div>
+	</div>
+</body>
+<script type="text/javascript">
+	var mediaConstraints = {
+		audio : true, // We want an audio track
+		video : true
+	};
+	var webSocket;
+	var localStream = null;
+	var answerStream=null;
+	function init() {
+		 navigator.getUserMedia= navigator.getUserMedia;
+		 navigator.getUserMedia({video:true,audio:false},success,console.log);
+		 webSocket = new WebSocket("ws://localhost:8080/webRtc/onlineServer");
+		 //webSocket.onopen=onOpen;
+		 webSocket.onmessage = onMessage;
+	};
+	function createPeerConnection() {
+		myPeerConnection = new RTCPeerConnection({
+			iceServers : [ // Information about ICE servers - Use your own!
+			{
+				urls : "stun:stun.stunprotocol.org"
+			} ]
+		});
+ 		  myPeerConnection.onicecandidate = handleICECandidateEvent;
+		  myPeerConnection.onaddstream = onAddStream;
+		 
+	}
+	 //回调
+	  var success=function(stream){
+		 document.getElementById("local_video").srcObject = stream;
+		 localStream=stream;
+	  }
+	function handleVideoOfferMsg(msg) {
+		createPeerConnection();
+		localStream.getTracks().forEach((track) => {
+			answerStream=myPeerConnection.addTrack(track, localStream);
+		    });
+    //localStream.getTracks().forEach(track => myPeerConnection.addTrack(track, localStream));
+		var desc = new RTCSessionDescription(msg.sdp);
+		myPeerConnection.setRemoteDescription(desc).then(function() {
+			CreateAnswer();
+		})
+	}
+	function CreateAnswer(){
+		   myPeerConnection.createAnswer().then(function(answer) {
+			return myPeerConnection.setLocalDescription(answer);
+			}).then(function() {
+			console.log("发送answer");
+			var msg = {
+				type : "video-answer",
+				sdp : myPeerConnection.localDescription
+			};
+			sendToServer(msg);
+		})
+	 }
+	//发送服务
+	function sendToServer(msg) {
+		var msgJSON = JSON.stringify(msg);
+		 webSocket.send(msgJSON);
+	}
+	function onMessage(event) {
+		var msg = JSON.parse(event.data);
+		console.log(msg.type);
+		if(msg.type=="video-offer"){
+			handleVideoOfferMsg(msg);
+		}
+		if(msg.type=="offer-candidate"){
+			handleNewICECandidateMsg(msg);
+		}
+		 if(msg.type=="close_a"){
+		 }
+	}
+	function handleNewICECandidateMsg(msg) {
+		  var candidate = new RTCIceCandidate(msg.candidate);
+		  myPeerConnection.addIceCandidate(candidate)
+		}
+	function onAddStream (event) {
+		console.log(event.stream);
+		  document.getElementById("received_video").srcObject = event.stream;
+		  document.getElementById("hangup-button").disabled = false;
+		};
+	function handleICECandidateEvent(event) {
+		 console.log("answer-发送candidate");
+		  if (event.candidate) {
+		    sendToServer({
+		      type: "answer-candidate",
+		      candidate: event.candidate
+		    });
+		  }
+		}
+	function hangUpCall(){
+		closeVideoCall();
+		 sendToServer({
+		      type: "close",
+		    });
+	}
+	function closeVideoCall() {
+  	  var remoteVideo = document.getElementById("received_video");
+  	  var localVideo = document.getElementById("local_video");
+
+  	  if (myPeerConnection) {
+  	    myPeerConnection.onaddstream = null;
+  	    myPeerConnection.onremovetrack = null;
+  	    myPeerConnection.onremovestream = null;
+  	    var remoteVideo=document.getElementById("received_video");
+  	    if (remoteVideo.srcObject) {
+  	      remoteVideo.srcObject.getTracks().forEach(track => track.stop());
+  	    }
+  	   var localVideo= document.getElementById("local_video")
+  	    if (localVideo.srcObject) {
+  	      localVideo.srcObject.getTracks().forEach(track => track.stop());
+  	    }
+
+  	    myPeerConnection.close();
+  	    myPeerConnection = null;
+  	  }
+  	  remoteVideo.removeAttribute("src");
+  	  remoteVideo.removeAttribute("srcObject");
+  	  localVideo.removeAttribute("src");
+  	  remoteVideo.removeAttribute("srcObject");
+  	  document.getElementById("hangup-button").disabled = true;
+  	}
+	init();
+</script>
+</html>

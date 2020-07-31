@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Insert title here</title>
+</head>
+<body>
+	<div class="flexChild" id="camera-container">
+		<div class="camera-box">
+			<video id="received_video" autoplay ></video>
+			<video id="local_video" autoplay muted ></video>
+			<button id="hangup-button" onclick="hangUpCall();" disabled>Hang Up</button>
+		</div>
+	</div>
+</body>
+<script type="text/javascript">
+	var socket;
+	var stream=null;
+	function init() {
+		socket = new WebSocket("ws://localhost:8080/webRtc/onlineServer");
+		socket.onopen = onOpen;
+		socket.onmessage = onMessage;
+// 		socket.onclose=onclose;
+	}
+    
+	//初始化 RTCPeerConnection
+	function createPeerConnection() {
+		  pc = new RTCPeerConnection({
+		      iceServers: [     // Information about ICE servers - Use your own!
+		        {
+		          urls: "stun:stun.stunprotocol.org"
+		        }
+		      ]
+		  });
+		   
+		  pc.onnegotiationneeded = onnegotiationneeded;
+		  pc.onicecandidate = onicecandidate;
+		  pc.onaddstream = onAddStream;
+		  return pc;
+		}
+	//摄像头打开成功回调
+	  var success=function(localStream){
+		  document.getElementById("local_video").srcObject = localStream;
+		  createPeerConnection();
+		  localStream.getTracks().forEach((track) => {
+			  stream=pc.addTrack(track, localStream);
+		    });
+	  }
+	  //打开摄像头
+	function invite() {
+		    navigator.getUserMedia= navigator.getUserMedia ||
+            navigator.webkitGetUserMedia ||
+            navigator.mozGetUserMedia;
+		    navigator.getUserMedia({video:true,audio:false},success,console.log);
+		}
+	function onOpen(){
+		invite();
+	}
+	function onMessage(event){
+		var msgJSON = JSON.parse(event.data);
+		console.log(msgJSON);
+		if(msgJSON.type=="video-answer"){
+			receiveAnswer(msgJSON);
+		}
+		 if(msgJSON.type=="answer-candidate"){
+			  let candidate = new RTCIceCandidate(msgJSON.candidate);
+			  pc.addIceCandidate(candidate);
+	    }
+		 if(msgJSON.type=="close"){
+			 closeVideoCall();
+// 			 onclose();
+			 sendToServer({
+			      type: "close_a",
+			    });
+		 }
+		
+	}
+		function onnegotiationneeded(){
+		  pc.createOffer().then(function(offer) {
+ 			    return pc.setLocalDescription(offer);
+ 			  })
+ 			  .then(function() {
+ 				  console.log("发送offer");
+ 			    sendToServer({
+ 			      type: "video-offer",
+ 			      sdp: pc.localDescription
+ 			    });
+ 			  })
+		}
+	   function onicecandidate(){
+		   if (event.candidate) {
+				  console.log("发送candidate");
+					    sendToServer({
+					      type: "offer-candidate",
+					      candidate: event.candidate
+					    });
+			   } 
+	   }
+	   function onAddStream(event){
+		      console.log(event.stream);
+		      document.getElementById("received_video").srcObject = event.stream;
+			  document.getElementById("hangup-button").disabled = false;
+	   }
+	   function receiveAnswer(msg){
+			var desc = new RTCSessionDescription(msg.sdp);
+			pc.setRemoteDescription(desc);
+	   }
+	//发送服务
+	function sendToServer(msg) {
+		var msgJSON = JSON.stringify(msg);
+		socket.send(msgJSON);
+	}
+    function closeVideoCall() {
+    	  var remoteVideo = document.getElementById("received_video");
+    	  var localVideo = document.getElementById("local_video");
+
+    	  if (pc) {
+    		  pc.onaddstream = null;
+    		  pc.onremovetrack = null;
+    		  pc.onremovestream = null;
+    	    var remoteVideo=document.getElementById("received_video");
+    	    if (remoteVideo.srcObject) {
+    	      remoteVideo.srcObject.getTracks().forEach(track => track.stop());
+    	    }
+    	    var localVideo= document.getElementById("local_video")
+    	    if (localVideo.srcObject) {
+    	      localVideo.srcObject.getTracks().forEach(track => track.stop());
+    	    }
+
+    	    pc.close();
+    	    pc = null;
+    	  }
+
+    	  remoteVideo.removeAttribute("src");
+    	  remoteVideo.removeAttribute("srcObject");
+    	  localVideo.removeAttribute("src");
+    	  remoteVideo.removeAttribute("srcObject");
+
+    	  document.getElementById("hangup-button").disabled = true;
+    	}
+	init();
+</script>
+</html>

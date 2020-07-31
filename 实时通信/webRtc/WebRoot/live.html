@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>另一界面</title>
+</head>
+<body>
+	<video src="" id="vi" autoplay style="width =: 64px; heght: 480px">
+	</video>
+	<img id="img" style="width: 400px; height: 330px" />
+	 <canvas id="output" style="display:none"></canvas>
+	<script type="text/javascript">
+	 var back=document.getElementById("output");
+	 var backContext=document.getElementById("output").getContext("2d");
+     var webSocket;
+     var video = document.getElementById("vi");
+	 var img = document.getElementById("img");
+		//回调
+		var success = function(stream) {
+		
+			video.srcObject = stream;
+		}
+		function init() {
+			webSocket = new WebSocket(
+					"ws://192.168.2.4:8080/webRtc/onlineServer");
+			webSocket.onopen=onOpen;
+			webSocket.onmessage =onMessage;
+		};
+		function onOpen() {
+			navigator.getUserMedia = navigator.getUserMedia;
+			navigator.getUserMedia({
+				video : true,
+				audio : false
+			}, success, console.log);
+		}
+		function onMessage(event){
+			img.src = event.data;
+			//调用摄像头
+			 draw();
+		}
+		 function draw(){
+			 backContext.drawImage(video,0,0,back.width,back.height);
+// 			 webSocket.send("111");
+		  }
+		init();
+	</script>
+</body>
+</html>
